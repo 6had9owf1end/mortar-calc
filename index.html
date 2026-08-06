@@ -102,7 +102,8 @@ body.night-mode img, body.night-mode .map-canvas-wrap{ filter: grayscale(1) sepi
 .map-select-row{display:flex;gap:8px;margin-bottom:10px;}
 .map-select-row select{flex:1;background:var(--panel-2);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:8px;border-radius:4px;}
 .map-canvas-wrap{position:relative;width:100%;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#000;touch-action:none;}
-.map-canvas-wrap img{width:100%;display:block;user-select:none;-webkit-user-select:none;}
+#mapImgInner{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;}
+.map-canvas-wrap img{display:block;width:100%;height:100%;user-select:none;-webkit-user-select:none;pointer-events:none;}
 .map-marker{position:absolute;width:16px;height:16px;border-radius:50%;border:2px solid #fff;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 4px rgba(0,0,0,.6);}
 .map-marker.calib{background:var(--amber);}
 .map-marker.mortar{background:#6b9c4e;}
@@ -203,16 +204,18 @@ body.night-mode img, body.night-mode .map-canvas-wrap{ filter: grayscale(1) sepi
     <div id="mapEmptyState" class="empty-state">Немає жодної карти. Натисни "+ Карта", щоб завантажити скріншот.</div>
 
     <div id="mapActiveArea" class="hidden">
-      <div class="row" id="zoomRow" style="margin-bottom:8px;">
-        <label>Масштаб</label>
-        <input type="range" id="mapZoom" min="1" max="6" step="0.25" value="1">
+      <div class="btn-row" id="zoomRow" style="margin-bottom:8px;">
+        <button type="button" class="btn btn-secondary" style="width:auto;padding:9px 16px;" id="zoomOutBtn">−</button>
+        <button type="button" class="btn btn-secondary" style="width:auto;padding:9px 16px;" id="zoomResetBtn">⤢ Скинути вигляд</button>
+        <button type="button" class="btn btn-secondary" style="width:auto;padding:9px 16px;" id="zoomInBtn">+</button>
       </div>
-      <div class="map-canvas-wrap" id="mapCanvasWrap" style="height:360px;overflow:auto;-webkit-overflow-scrolling:touch;">
-        <div id="mapImgInner" style="position:relative;display:inline-block;">
+      <div class="map-canvas-wrap" id="mapCanvasWrap" style="height:360px;">
+        <div id="mapImgInner">
           <img id="mapImg" draggable="false">
         </div>
       </div>
-      <div class="hint" id="mapStatus" style="margin-top:8px;"></div>
+      <div class="hint" style="margin-top:4px;">Один палець — рухати карту, два пальці — щипок для масштабу (як у галереї). Коротке тапання ставить точку.</div>
+      <div class="hint" id="mapStatus" style="margin-top:4px;"></div>
 
       <div id="quickSetupForm" class="hidden">
         <div class="row"><label>Розмір карти (м)</label><input id="mapWorldSize" inputmode="decimal" placeholder="напр. 12800"></div>
@@ -873,9 +876,7 @@ function renderMapTab(){
   active.classList.remove('hidden');
   const m = MAPS[currentMap];
   const img = document.getElementById('mapImg');
-  mapBaseWidth = 0;
-  document.getElementById('mapZoom').value = 1;
-  img.onload = applyMapZoom;
+  img.onload = initMapView;
   img.src = m.image;
   clearMapMarkers();
   mortarPoint = null; targetPoint = null; mortarPixel = null; targetPixel = null;
@@ -937,27 +938,146 @@ function clearMapMarkers(){
 }
 function addMarker(px, py, cls){
   const inner = document.getElementById('mapImgInner');
-  const img = document.getElementById('mapImg');
   const marker = document.createElement('div');
   marker.className = 'map-marker ' + cls;
-  const xPct = (px / img.naturalWidth) * 100;
-  const yPct = (py / img.naturalHeight) * 100;
-  marker.style.left = xPct + '%';
-  marker.style.top = yPct + '%';
+  marker.style.left = px + 'px';
+  marker.style.top = py + 'px';
   inner.appendChild(marker);
 }
 
-// ---------- zoom (native scroll/pan container, image drawn at pixel width so % markers stay aligned) ----------
-let mapBaseWidth = 0;
-function applyMapZoom(){
+// ---------- pinch-zoom + drag-pan (gallery-style) ----------
+// mapView: pan/zoom state. tx,ty = translate in wrap-local px. scale = user zoom multiplier on top of baseScale.
+const mapView = { tx:0, ty:0, scale:1, baseScale:1 };
+const MIN_SCALE = 0.5, MAX_SCALE = 10;
+
+function initMapView(){
   const img = document.getElementById('mapImg');
   const wrap = document.getElementById('mapCanvasWrap');
-  const zoom = parseFloat(document.getElementById('mapZoom').value) || 1;
-  if(!mapBaseWidth){ mapBaseWidth = wrap.clientWidth || 300; }
-  img.style.width = Math.round(mapBaseWidth * zoom) + 'px';
+  const inner = document.getElementById('mapImgInner');
+  inner.style.width = img.naturalWidth + 'px';
+  inner.style.height = img.naturalHeight + 'px';
+  mapView.baseScale = Math.min(wrap.clientWidth / img.naturalWidth, wrap.clientHeight / img.naturalHeight) || 1;
+  mapView.scale = 1;
+  // center the image in the wrap
+  const dispW = img.naturalWidth * mapView.baseScale;
+  const dispH = img.naturalHeight * mapView.baseScale;
+  mapView.tx = (wrap.clientWidth - dispW) / 2;
+  mapView.ty = (wrap.clientHeight - dispH) / 2;
+  applyMapTransform();
 }
-document.getElementById('mapZoom').addEventListener('input', applyMapZoom);
-window.addEventListener('resize', ()=>{ mapBaseWidth = 0; applyMapZoom(); });
+function applyMapTransform(){
+  const eff = mapView.baseScale * mapView.scale;
+  document.getElementById('mapImgInner').style.transform =
+    `translate(${mapView.tx}px, ${mapView.ty}px) scale(${eff})`;
+}
+function resetMapView(){ initMapView(); }
+document.getElementById('zoomResetBtn').addEventListener('click', resetMapView);
+document.getElementById('zoomInBtn').addEventListener('click', ()=>{ zoomAtCenter(1.4); });
+document.getElementById('zoomOutBtn').addEventListener('click', ()=>{ zoomAtCenter(1/1.4); });
+function zoomAtCenter(factor){
+  const wrap = document.getElementById('mapCanvasWrap');
+  const cx = wrap.clientWidth/2, cy = wrap.clientHeight/2;
+  applyZoomAtPoint(cx, cy, factor);
+}
+function applyZoomAtPoint(localX, localY, factor){
+  const eff0 = mapView.baseScale * mapView.scale;
+  const px = (localX - mapView.tx) / eff0;
+  const py = (localY - mapView.ty) / eff0;
+  let newScale = mapView.scale * factor;
+  newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+  const eff1 = mapView.baseScale * newScale;
+  mapView.scale = newScale;
+  mapView.tx = localX - px*eff1;
+  mapView.ty = localY - py*eff1;
+  applyMapTransform();
+}
+
+function screenToNaturalPx(clientX, clientY){
+  const wrap = document.getElementById('mapCanvasWrap');
+  const rect = wrap.getBoundingClientRect();
+  const localX = clientX - rect.left, localY = clientY - rect.top;
+  const eff = mapView.baseScale * mapView.scale;
+  return { px: (localX - mapView.tx) / eff, py: (localY - mapView.ty) / eff };
+}
+
+// pointer gesture tracking
+const activePointers = new Map();
+let dragInfo = null;   // single-finger pan/tap
+let pinchInfo = null;  // two-finger pinch
+
+function mapPointerDown(e){
+  if(!currentMap) return;
+  const wrap = document.getElementById('mapCanvasWrap');
+  wrap.setPointerCapture(e.pointerId);
+  activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(activePointers.size === 1){
+    dragInfo = { startX:e.clientX, startY:e.clientY, tx0:mapView.tx, ty0:mapView.ty, time:Date.now(), moved:false };
+    pinchInfo = null;
+  } else if(activePointers.size === 2){
+    const pts = [...activePointers.values()];
+    const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    const rect = wrap.getBoundingClientRect();
+    const midX = (pts[0].x+pts[1].x)/2 - rect.left;
+    const midY = (pts[0].y+pts[1].y)/2 - rect.top;
+    pinchInfo = { dist, scale0: mapView.scale, tx0: mapView.tx, ty0: mapView.ty, midX, midY };
+    dragInfo = null;
+  }
+}
+function mapPointerMove(e){
+  if(!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const wrap = document.getElementById('mapCanvasWrap');
+  if(activePointers.size === 1 && dragInfo){
+    const dx = e.clientX - dragInfo.startX, dy = e.clientY - dragInfo.startY;
+    if(Math.abs(dx) > 6 || Math.abs(dy) > 6) dragInfo.moved = true;
+    mapView.tx = dragInfo.tx0 + dx;
+    mapView.ty = dragInfo.ty0 + dy;
+    applyMapTransform();
+  } else if(activePointers.size === 2 && pinchInfo){
+    const pts = [...activePointers.values()];
+    const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    const rect = wrap.getBoundingClientRect();
+    const midX = (pts[0].x+pts[1].x)/2 - rect.left;
+    const midY = (pts[0].y+pts[1].y)/2 - rect.top;
+    const factor = dist / (pinchInfo.dist || 1);
+    let newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, pinchInfo.scale0 * factor));
+    const eff0 = mapView.baseScale * pinchInfo.scale0;
+    const px = (pinchInfo.midX - pinchInfo.tx0) / eff0;
+    const py = (pinchInfo.midY - pinchInfo.ty0) / eff0;
+    const eff1 = mapView.baseScale * newScale;
+    mapView.scale = newScale;
+    mapView.tx = midX - px*eff1;
+    mapView.ty = midY - py*eff1;
+    applyMapTransform();
+  }
+}
+function mapPointerUp(e){
+  const wasSingle = activePointers.size === 1;
+  activePointers.delete(e.pointerId);
+  if(wasSingle && dragInfo && !dragInfo.moved && (Date.now()-dragInfo.time) < 500){
+    const {px, py} = screenToNaturalPx(dragInfo.startX, dragInfo.startY);
+    handleMapPoint(px, py);
+  }
+  if(activePointers.size === 1){
+    const remaining = [...activePointers.entries()][0];
+    dragInfo = { startX: remaining[1].x, startY: remaining[1].y, tx0: mapView.tx, ty0: mapView.ty, time:Date.now(), moved:true };
+    pinchInfo = null;
+  } else if(activePointers.size === 0){
+    dragInfo = null; pinchInfo = null;
+  }
+}
+const mapCanvasWrapEl = document.getElementById('mapCanvasWrap');
+mapCanvasWrapEl.addEventListener('pointerdown', mapPointerDown);
+mapCanvasWrapEl.addEventListener('pointermove', mapPointerMove);
+mapCanvasWrapEl.addEventListener('pointerup', mapPointerUp);
+mapCanvasWrapEl.addEventListener('pointercancel', mapPointerUp);
+mapCanvasWrapEl.addEventListener('wheel', (e)=>{
+  if(!currentMap) return;
+  e.preventDefault();
+  const rect = mapCanvasWrapEl.getBoundingClientRect();
+  const localX = e.clientX - rect.left, localY = e.clientY - rect.top;
+  applyZoomAtPoint(localX, localY, e.deltaY < 0 ? 1.15 : 1/1.15);
+}, {passive:false});
 
 let pendingCalibPixel = null;
 function similarityTransform(px, py, p1, p2){
@@ -974,22 +1094,13 @@ function similarityTransform(px, py, p1, p2){
   };
 }
 
-document.getElementById('mapCanvasWrap').addEventListener('click', (e)=>{
+function handleMapPoint(px, py){
   if(!currentMap) return;
   const calibVisible = !document.getElementById('calibForm').classList.contains('hidden');
-  const m0 = MAPS[currentMap];
-  if((!m0.points || m0.points.length < 2) && !calibVisible) return; // still choosing quick vs manual setup
-  const img = document.getElementById('mapImg');
-  const rect = img.getBoundingClientRect();
-  const scaleX = img.naturalWidth / rect.width;
-  const scaleY = img.naturalHeight / rect.height;
-  const px = (e.clientX - rect.left) * scaleX;
-  const py = (e.clientY - rect.top) * scaleY;
-
   const m = MAPS[currentMap];
   if(!m.points) m.points = [];
-
   if(m.points.length < 2){
+    if(!calibVisible) return; // still choosing quick vs manual setup
     pendingCalibPixel = {px, py};
     addMarker(px, py, 'calib');
     document.getElementById('calibForm').classList.remove('hidden');
@@ -1011,7 +1122,7 @@ document.getElementById('mapCanvasWrap').addEventListener('click', (e)=>{
   }
   redrawMapMarkers();
   updateMapResults();
-});
+}
 
 function redrawMapMarkers(){
   clearMapMarkers();

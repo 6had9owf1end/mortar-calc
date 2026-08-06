@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mortar-calc-v5';
+const CACHE_NAME = 'mortar-calc-v6';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-512-maskable.png'];
 
 self.addEventListener('install', (e) => {
