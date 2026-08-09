@@ -125,6 +125,7 @@ body.night-mode img, body.night-mode .map-canvas-wrap{ filter: grayscale(1) sepi
   <div class="tab-btn active" data-tab="calc">Розрахунок</div>
   <div class="tab-btn" data-tab="grid">Плоттер</div>
   <div class="tab-btn" data-tab="tables">Таблиці</div>
+  <div class="tab-btn" data-tab="desktop">Десктоп</div>
 </div>
 
 <!-- ===================== TAB: CALC ===================== -->
@@ -320,6 +321,29 @@ body.night-mode img, body.night-mode .map-canvas-wrap{ filter: grayscale(1) sepi
     <div class="panel-title">Оновлення застосунку</div>
     <div class="hint">Якщо після оновлення на GitHub тут щось не змінилось — телефон показує стару закешовану версію. Ця кнопка скидає лише кеш самого застосунку (код/іконки), таблиці боєприпасів і карти НЕ видаляються.</div>
     <button class="btn btn-secondary" id="resetCacheBtn">Скинути кеш застосунку</button>
+  </div>
+</div>
+
+<!-- ===================== TAB: DESKTOP / OVERLAY ===================== -->
+<div id="tab-desktop" class="tab-content hidden">
+  <div class="panel">
+    <div class="panel-title">Оверлей-версія для ПК</div>
+    <div class="hint">Окреме маленьке віконце "завжди зверху", яке лежить поверх гри — так само, як цей калькулятор, тільки не треба перемикатись на телефон. Працює лише в режимі "віконна/безрамкова повноекранна" (Borderless Windowed) — у справжньому Exclusive Fullscreen Windows не показує жодних вікон поверх гри, це обмеження ОС, не застосунку.</div>
+    <div class="hint" style="margin-top:8px;"><b>Як увімкнути потрібний режим у грі:</b> Налаштування → Відео → Режим екрана → "Віконний" або "Безрамковий віконний" (Windowed / Borderless Windowed).</div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Що всередині</div>
+    <div class="hint">Той самий калькулятор, ті самі таблиці й карти (спільний код з мобільною/веб-версією) — обгорнутий у легкий Electron-застосунок: завжди-зверху вікно, гарячу клавішу для швидкого сховати/показати (щоб не заважало прицілюватись), портативний .exe без встановлення.</div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Збірка</div>
+    <div class="hint">Проєкт для збірки — окремим файлом нижче в чаті. Компілюється в один .exe на твоєму ПК (Node.js потрібен, збірка йде через electron-builder), детальні кроки — у відповіді.</div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">GitHub</div>
+    <div class="hint">Весь код і релізи — в одному репозиторії проєкту.</div>
+    <a class="btn" style="display:block;text-align:center;text-decoration:none;" href="https://github.com/6had9owf1end/mortar-calc" target="_blank" rel="noopener">Відкрити репозиторій на GitHub</a>
+    <a class="btn btn-secondary" style="display:block;text-align:center;text-decoration:none;margin-top:8px;" href="https://github.com/6had9owf1end/mortar-calc/releases" target="_blank" rel="noopener">Завантажити оверлей (.exe) з Releases</a>
   </div>
 </div>
 
@@ -631,13 +655,35 @@ function refreshMilsSelect(){
   if(!currentFaction){ sel.value = '6400'; return; }
   sel.value = String(DATA.factions[currentFaction].mils || 6400);
 }
+const CALIBER_INFO = {
+  '120мм': 'Довідково (реальні системи, не ігрові дані): 120-мм міномети зазвичай мають дальність стрільби 5,5-9,4 км стандартними мінами (напр. 2Б11/ПМ-43 ~5,7 км, фінський KRH92 ~8,6 км, сербський M95 ~9,4 км), 12-17 км — активно-реактивними чи керованими мінами (напр. PERM). Точні прицільні дані завжди залежать від конкретної моделі в моді — додай свою таблицю через CSV-імпорт або вручну рядками нижче.',
+  '155мм': 'Довідково (реальні системи, не ігрові дані): 155-мм гаубиці типу M777 зазвичай мають дальність ~24,7 км звичайним снарядом, ~30 км активно-реактивним (RAP), і до ~40 км керованим снарядом типу Excalibur. Точні прицільні дані завжди залежать від конкретної моделі в моді — додай свою таблицю через CSV-імпорт або вручну рядками нижче.'
+};
+function caliberHintFor(factionName){
+  if(!factionName) return null;
+  for(const key of Object.keys(CALIBER_INFO)){
+    if(factionName.startsWith(key)) return CALIBER_INFO[key];
+  }
+  return null;
+}
+
 function refreshDataTable(){
   const body = document.getElementById('dataTableBody');
   body.innerHTML = '';
   const empty = document.getElementById('emptyState');
-  if(!currentFaction || !currentCharge){ empty.classList.remove('hidden'); return; }
+  const hint = caliberHintFor(currentFaction);
+  if(!currentFaction || !currentCharge){
+    empty.classList.remove('hidden');
+    empty.textContent = hint || 'Немає даних. Додайте фракцію, заряд і рядки дальності зі своєї таблиці боєприпасів.';
+    return;
+  }
   const table = DATA.factions[currentFaction].charges[currentCharge] || [];
-  if(!table.length){ empty.classList.remove('hidden'); } else { empty.classList.add('hidden'); }
+  if(!table.length){
+    empty.classList.remove('hidden');
+    empty.textContent = hint || 'Немає даних. Додайте фракцію, заряд і рядки дальності зі своєї таблиці боєприпасів.';
+  } else {
+    empty.classList.add('hidden');
+  }
   table.sort((a,b)=>a[0]-b[0]);
   table.forEach((row, idx)=>{
     const tr = document.createElement('tr');
